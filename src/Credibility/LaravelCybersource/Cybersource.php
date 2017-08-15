@@ -1,6 +1,5 @@
 <?php namespace Credibility\LaravelCybersource;
 
-use App\Includes\CyberSource\CybsSoapClient;
 use Credibility\LaravelCybersource\Exceptions\CybersourceException;
 use Credibility\LaravelCybersource\models\CybersourceResponse;
 use Credibility\LaravelCybersource\models\CybersourceSOAPModel;
