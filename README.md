@@ -11,13 +11,6 @@ This package wraps the Cybersource SOAP API in a convenient, easy to use package
 Install using composer:
     
     
-    "repositories":
-    [
-        {
-            "type": "vcs",
-            "url": "http://github.com/asaadabdo/laravel-cybersource"
-        }
-    ],
     "require": {
       "asaadabdo/laravel-cybersource": "4.0.*" 
     }
