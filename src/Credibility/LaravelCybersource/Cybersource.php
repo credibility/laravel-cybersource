@@ -10,11 +10,19 @@ class Cybersource {
     /**
      * @var SOAPRequester
      */
-    private $requester;
-    public $timeout = 10;
 
     /* ServerConfigs */
     protected $configs;
+
+    private $requester;
+
+    public $timeout = 10;
+
+    public $billTo = array();
+
+    public $card = array();
+
+    public $items = array();
 
     public $avsCodes = array(
         'A' => 'Partial match: Street address matches, but 5-digit and 9-digit postal codes do not match.',
@@ -69,6 +77,13 @@ class Cybersource {
         'JCB' => '007',
     );
 
+    public $testCards = array(
+        'amex' => '378282246310005',
+        'discover' => '6011111111111117',
+        'mastercard' => '5555555555554444',
+        'visa' => '4111111111111111',
+    );
+
     private $report_types = array(
         'payment_submission_detail' 	=> 'PaymentSubmissionDetailReport',
         'subscription_detail' 			=> 'SubscriptionDetailReport',
@@ -102,24 +117,50 @@ class Cybersource {
      * @param bool $autoRenew
      * @param null $startDate
      * @param null $merchantReferenceNumber
+     * @param $currency
      * @return \Credibility\LaravelCybersource\models\CybersourceResponse
      */
-    public function createSubscription($paymentToken, $productTitle, $amount, $frequency, $autoRenew = true, $startDate = null, $merchantReferenceNumber = null)
+    public function createSubscription($paymentToken, $productTitle, $amount, $frequency, $autoRenew = true, $startDate = null, $merchantReferenceNumber = null, $currency = null)
     {
         $request = $this->createNewSubscriptionRequest($paymentToken, $productTitle,
-            $amount, $frequency, $autoRenew, $startDate, $merchantReferenceNumber
+            $amount, $frequency, $autoRenew, $startDate, $merchantReferenceNumber, $currency
         );
+        return $this->sendRequest($request);
+    }
+
+    /**
+     * @param string $requestId The request ID received from an AuthReply statement, if applicable.
+     * @param boolean|null $autoAuthorize Set to false to enable the disableAutoAuth flag to avoid an authorization and simply store the card. The default (null) means to omit the value, which means it'll use the setting on the account. Set to true to force an authorization, whether the account requires it or not.
+     * @param string|null $recurringSubscriptionInfo specify that this is an on-demand subscription, it should not auto-bill
+     * @return \Credibility\LaravelCybersource\models\CybersourceResponse
+     */
+
+    public function createCardSubscription($requestId = null, $autoAuthorize = null, $recurringSubscriptionInfo = null, $currency = null )
+    {
+        $request = $this->createNewCardSubscriptionRequest($requestId, $autoAuthorize, $recurringSubscriptionInfo, $currency);
         return $this->sendRequest($request);
     }
 
     /**
      * @param $subscriptionId
      * @param $paymentToken
+     * @param $currency
      * @return \Credibility\LaravelCybersource\models\CybersourceResponse
      */
-    public function updateSubscription($subscriptionId, $paymentToken)
+    public function updateSubscription($subscriptionId, $paymentToken, $currency = null)
     {
-        $request = $this->createUpdateSubscriptionRequest($subscriptionId, $paymentToken);
+        $request = $this->createUpdateSubscriptionRequest($subscriptionId, $paymentToken, $currency);
+        return $this->sendRequest($request);
+    }
+    /**
+     * @param $subscriptionId
+     * @param $updateCard
+     * @param $currency
+     * @return \Credibility\LaravelCybersource\models\CybersourceResponse
+     */
+    public function updateCardSubscription($subscriptionId, $updateCard = null, $currency = null)
+    {
+        $request = $this->createUpdateCardSubscriptionRequest($subscriptionId, $updateCard, $currency);
         return $this->sendRequest($request);
     }
 
@@ -134,14 +175,68 @@ class Cybersource {
     }
 
     /**
+     * @param $subscriptionId
+     * @return \Credibility\LaravelCybersource\models\CybersourceResponse
+     */
+    public function deleteSubscription($subscriptionId)
+    {
+        $request = $this->createDeleteSubscriptionRequest($subscriptionId);
+        return $this->sendRequest($request);
+    }
+
+
+    /**
+     * @param $requestId
+     * @return \Credibility\LaravelCybersource\models\CybersourceResponse
+     */
+    public function voidTransaction($requestId)
+    {
+        $request = $this->createVoidTransationRequest($requestId);
+        return $this->sendRequest($request);
+    }
+
+    /**
+     * @param $amount
+     * @param $currency
+     * @return \Credibility\LaravelCybersource\models\CybersourceResponse
+     */
+    public function chargeCardOnce($amount = null, $currency = null)
+    {
+        $request = $this->createChargeCardOnceRequest($amount, $currency);
+        return $this->sendRequest($request);
+    }
+
+
+    /**
+     * Charge the given Subscription ID a certain amount.
+     *
+     * @param string $subscriptionId The CyberSource Subscription ID to charge.
+     * @param float $amount The amount to charge.
+     * @return stdClass The raw response object from the SOAPRequester endpoint
+     */
+    public function chargeCurrentSubscriptionOnce($subscriptionId, $amount = null, $currency = null)
+    {
+        $request = $this->createChargeCurrentSubscriptionOnceRequest($subscriptionId, $amount, $currency);
+        return $this->sendRequest($request);
+    }
+
+
+    /**
      * @param $amount
      * @param $paymentToken
      * @return \Credibility\LaravelCybersource\models\CybersourceResponse
      */
-    public function chargeOnce($amount, $paymentToken)
+    public function chargeOnce($amount, $paymentToken, $currency = null)
     {
-        $request = $this->createOneTimeChargeRequest($amount, $paymentToken);
+        $request = $this->createOneTimeChargeRequest($amount, $paymentToken, $currency);
         return $this->sendRequest($request);
+    }
+
+    public function createOneTimeChargeRequest($amount, $paymentToken, $currency = null)
+    {
+        $request = $this->createNewSubscriptionRequest(
+            $paymentToken, 'one-time-charge', $amount, 'on-demand', 'false', $currency);
+        return $request;
     }
 
     /**
@@ -150,42 +245,22 @@ class Cybersource {
      * @param $total
      * @return \Credibility\LaravelCybersource\models\CybersourceResponse
      */
-    public function refund($transactionId, $currency, $total)
+    public function refund($transactionId, $currency = null, $total)
     {
         $request = $this->createRefundRequest($transactionId, $currency, $total);
         return $this->sendRequest($request);
     }
 
+
+
     // @codeCoverageIgnoreEnd
 
-    public function createRefundRequest($requestId, $currency, $total)
-    {
-        $request = $this->createNewRequest();
 
-        $ccCreditService = new CybersourceSOAPModel();
-        $ccCreditService->run = 'true';
-        $ccCreditService->captureRequestID = $requestId;
 
-        $purchaseTotals = new CybersourceSOAPModel();
-        $purchaseTotals->currency = $currency;
-        $purchaseTotals->grandTotalAmount = $total;
-
-        $request->ccCreditService = $ccCreditService;
-        $request->purchaseTotals = $purchaseTotals;
-
-        return $request;
-    }
-
-    public function createOneTimeChargeRequest($amount, $paymentToken)
-    {
-        $request = $this->createNewSubscriptionRequest(
-            $paymentToken, 'one-time-charge', $amount, 'on-demand', 'false');
-        return $request;
-    }
 
     public function createNewSubscriptionRequest($paymentToken, $productTitle, $amount,
                                                  $frequency = 'weekly', $autoRenew = 'true', $startDate = null,
-                                                 $merchantReferenceNumber = null)
+                                                 $merchantReferenceNumber = null, $currency = null)
     {
         $startDate = empty($startDate) ? $this->getTodaysDate() : $startDate;
         $request = $this->createNewRequest($merchantReferenceNumber);
@@ -204,12 +279,99 @@ class Cybersource {
         $recurringSubscriptionInfo->automaticRenew = $autoRenew;
         $recurringSubscriptionInfo->startDate = $startDate;
 
+        if(is_null($currency)){
+            $currency = $this->configs->getCurrency();
+        }
+
+        $request->purchaseTotals = $this->createPurchaseTotals($currency);
         $request->paySubscriptionCreateService = $paySubscriptionCreateService;
         $request->recurringSubscriptionInfo = $recurringSubscriptionInfo;
         $request->subscription = $subscription;
 
         return $request;
     }
+
+    public function createRefundRequest($requestId, $currency = null, $total)
+    {
+        $request = $this->createNewRequest();
+
+        $ccCreditService = new CybersourceSOAPModel();
+        $ccCreditService->run = 'true';
+        $ccCreditService->captureRequestID = $requestId;
+
+        $request->purchaseTotals = $this->createPurchaseTotals($currency, $total);
+        $request->ccCreditService = $ccCreditService;
+
+        return $request;
+    }
+
+    /**
+     * Create a new payment subscription, either by performing a $0 authorization check on the credit card or using a
+     * pre-created request token from an authorization request that's already been performed.
+     *
+     * @param string $requestId The request ID received from an AuthReply statement, if applicable.
+     * @param boolean|null $autoAuthorize Set to false to enable the disableAutoAuth flag to avoid an authorization and simply store the card. The default (null) means to omit the value, which means it'll use the setting on the account. Set to true to force an authorization, whether the account requires it or not.
+     * @param string|null $recurringSubscriptionInfo specify that this is an on-demand subscription, it should not auto-bill
+     */
+    public function createNewCardSubscriptionRequest ( $requestId = null, $autoAuthorize = null, $recurringSubscriptionInfo = null, $currency = null ) {
+
+        $request = $this->createNewRequest();
+
+        $paySubscriptionCreateService = new CybersourceSOAPModel();
+        $paySubscriptionCreateService->run = 'true';
+
+        // if there is a request token passed in, reference it
+        if ( $requestId != null ) {
+            $paySubscriptionCreateService->paymentRequestID = $requestId;
+        }
+        else {
+
+            if ( $autoAuthorize === false ) {
+                $paySubscriptionCreateService->disableAutoAuth = 'true';
+            }
+            else if ( $autoAuthorize === true ) {
+                $paySubscriptionCreateService->disableAutoAuth = 'false';
+            }
+
+        }
+
+        // remove this block if error
+        $subscription = new CybersourceSOAPModel();
+        $subscription->paymentMethod = 'credit card';
+
+
+
+        if ( $recurringSubscriptionInfo == null ) {
+            // specify that this is an on-demand subscription, it should not auto-bill
+            $recurringSubscriptionInfo = new CybersourceSOAPModel();
+            $recurringSubscriptionInfo->frequency = 'on-demand';
+        }
+
+
+        // we only need to add billing info to the request if there is not a previous request token - otherwise it's contained in it
+        if ( $requestId == null ) {
+
+            // add billing info to the request
+            $request->billTo = $this->createBillTo();
+
+            // add credit card info to the request
+            $request->card = $this->createCard();
+
+        }
+
+        if(is_null($currency)){
+            $currency = $this->configs->getCurrency();
+        }
+
+        $request->purchaseTotals = $this->createPurchaseTotals($currency);
+        $request->paySubscriptionCreateService = $paySubscriptionCreateService;
+        $request->subscription = $subscription;
+        $request->recurringSubscriptionInfo = $recurringSubscriptionInfo;
+
+        return $request;
+
+    }
+
 
     public function createSubscriptionStatusRequest($subscriptionId)
     {
@@ -228,7 +390,7 @@ class Cybersource {
         return $request;
     }
 
-    public function createUpdateSubscriptionRequest($subscriptionId, $paymentToken)
+    public function createUpdateSubscriptionRequest($subscriptionId, $paymentToken, $currency = null)
     {
         $request = $this->createNewRequest();
 
@@ -241,10 +403,43 @@ class Cybersource {
         $subscriptionInfo = new CybersourceSOAPModel();
         $subscriptionInfo->subscriptionID = $subscriptionId;
 
+        if(!is_null($currency)){
+            $request->purchaseTotals = $this->createPurchaseTotals($currency);
+        }
+
         $request->recurringSubscriptionInfo = $subscriptionInfo;
 
         return $request;
     }
+
+    public function createUpdateCardSubscriptionRequest($subscriptionId, $updateCard = null, $currency = null)
+    {
+        $request = $this->createNewRequest();
+
+        $subscriptionUpdateRequest = new CybersourceSOAPModel();
+        $subscriptionUpdateRequest->run = 'true';
+
+        $request->paySubscriptionUpdateService = $subscriptionUpdateRequest;
+
+        $subscriptionInfo = new CybersourceSOAPModel();
+        $subscriptionInfo->subscriptionID = $subscriptionId;
+
+        $request->recurringSubscriptionInfo = $subscriptionInfo;
+
+        $request->billTo = $this->createBillTo();
+
+        if(!is_null($currency)){
+            $request->purchaseTotals = $this->createPurchaseTotals($currency);
+        }
+
+        if($updateCard === true){
+            $request->card = $this->createCard();
+        }
+
+        return $request;
+    }
+
+
 
     public function createCancelSubscriptionRequest($subscriptionId)
     {
@@ -263,6 +458,121 @@ class Cybersource {
         return $request;
     }
 
+    /**
+     * Void a request that has not yet been settled. If it's already settled, you'll have to do a credit instead.
+     *
+     * @param  string $request_id The Request ID of the operation you wish to void.
+     * @return object The response object from CyberSource.
+     */
+
+    public function createVoidTransationRequest($requestId)
+    {
+        $request = $this->createNewRequest();
+
+        $voidService = new CybersourceSOAPModel();
+        $voidService->run = 'true';
+        $voidService->voidRequestID = $requestId;
+
+        $request->voidService = $voidService;
+
+        return $request;
+    }
+
+
+    public function createDeleteSubscriptionRequest($subscriptionId)
+    {
+        $request = $this->createNewRequest();
+
+        $delete = new CybersourceSOAPModel();
+        $delete->run = 'true';
+
+        $subscriptionInfo = new CybersourceSOAPModel();
+        $subscriptionInfo->subscriptionID = $subscriptionId;
+
+
+        $request->paySubscriptionDeleteService = $delete;
+        $request->recurringSubscriptionInfo = $subscriptionInfo;
+
+        return $request;
+    }
+
+
+    public function createChargeCardOnceRequest($amount = null, $currency = null)
+    {
+        $request = $this->createNewRequest();
+
+        // we want to perform an authorization
+        $ccAuthService = new CybersourceSOAPModel();
+        $ccAuthService->run = 'true';		// note that it's textual true so it doesn't get cast as an int
+
+        // and actually charge them
+        $ccCaptureService = new CybersourceSOAPModel();
+        $ccCaptureService->run = 'true';
+
+
+        $request->ccAuthService = $ccAuthService;
+        $request->ccCaptureService = $ccCaptureService;
+
+        // add billing info to the request
+        $request->billTo = $this->createBillTo();
+
+        // add credit card info to the request
+        $request->card = $this->createCard();
+
+        // if there was an amount or currency specified, just use it - otherwise add the individual items
+
+        if(is_null($currency)){
+            $currency = $this->configs->getCurrency();
+        }
+        $request->purchaseTotals = $this->createPurchaseTotals($currency, $amount);
+
+        if ( is_null($amount) ) {
+            $request->item = $this->createItems( $request );
+        }
+
+
+        return $request;
+    }
+
+
+    /**
+     * Charge the given Subscription ID a certain amount.
+     *
+     * @param string $subscriptionId The CyberSource Subscription ID to charge.
+     * @param float $amount The amount to charge.
+     * @return stdClass The raw response object from the SOAPRequester endpoint
+     */
+    public function createChargeCurrentSubscriptionOnceRequest ( $subscriptionId, $amount = null, $currency = null ) {
+
+        $request = $this->createNewRequest();
+
+        // we want to perform an authorization
+        $ccAuthService = new CybersourceSOAPModel();
+        $ccAuthService->run = 'true';		// note that it's textual true so it doesn't get cast as an int
+        $request->ccAuthService = $ccAuthService;
+
+        // and actually charge them
+        $ccCaptureService = new CybersourceSOAPModel();
+        $ccCaptureService->run = 'true';
+        $request->ccCaptureService = $ccCaptureService;
+
+        // actually remember to add the subscription ID that we're billing... duh!
+        $recurringSubscriptionInfo = new CybersourceSOAPModel();
+        $recurringSubscriptionInfo->subscriptionID = $subscriptionId;
+        $request->recurringSubscriptionInfo = $recurringSubscriptionInfo;
+
+        if(!is_null($currency) || !is_null($amount)){
+            $request->purchaseTotals = $this->createPurchaseTotals($currency, $amount);
+        }
+
+        // if there was an amount or currency specified, just use it - otherwise add the individual items
+        if ( is_null($amount) ) {
+            $request->item = $this->createItems( $request );
+        }
+
+        return $request;
+
+    }
 
 
     public function createNewRequest($merchantReferenceNumber = null)
@@ -389,5 +699,250 @@ class Cybersource {
         date_default_timezone_set($this->configs->getTimezone());
         return date('Ymd');
     }
+
+
+    public function card( $number, $expirationMonth, $expirationYear, $cvnCode = null, $cardType = null ) {
+
+        $this->card = array(
+            'accountNumber' => $number,
+            'expirationMonth' => $expirationMonth,
+            'expirationYear' => $expirationYear,
+        );
+
+        // if a cvn code was supplied, use it
+        // note that cvIndicator is turned on automatically if we pass in a cvNumber
+        if ( $cvnCode != null ) {
+            $this->card['cvNumber'] = $cvnCode;
+        }
+
+        // and if we specified a card type, use that too
+        if ( $cardType != null ) {
+            // if the card type is numeric, we probably already specified the exact code, just use it
+            if ( is_numeric( $cardType ) ) {
+                $this->card['cardType'] = $cardType;
+            }
+            else {
+                // otherwise, convert it from a textual name
+                $this->card['cardType'] = $this->cardTypes[ $cardType ];
+            }
+        }
+
+        return $this;
+
+    }
+
+    public function items( $items = array() ) {
+
+        foreach ( $items as $item )  {
+            $this->addItem( $item['price'], $item['quantity'] );
+        }
+
+        return $this;
+
+    }
+
+    public function addItem( $price, $quantity = 1, $additional_fields = array()) {
+
+        $item = array(
+            'unitPrice' => $price,
+            'quantity' => $quantity,
+        );
+
+        $item = array_merge( $item, $additional_fields);
+
+        $this->items[] = $item;
+
+        return $this;
+
+    }
+
+
+
+    /**
+     * Factory-pattern method for setting the billing information for this charge.
+     *
+     * Required fields are:
+     *	firstName
+     *	lastName
+     *	street1
+     *	city
+     *	state
+     *	postalCode
+     *	country
+     *	email
+     *
+     * @param array $info An associative array of the fields to set. Note the required fields above.
+     * @return \CyberSource The current object.
+     * @throws InvalidArgumentException Thrown when a required field is not present in the $info array.
+     */
+
+    public function billTo( $info = array() ) {
+
+        $fields = array(
+            'firstName',
+            'lastName',
+            'street1',
+            'city',
+            'state',
+            'postalCode',
+            'country',
+            'email',
+        );
+
+        foreach ( $fields as $field ) {
+            if ( !isset( $info[ $field ] ) ) {
+                throw new \InvalidArgumentException( 'The bill to field ' . $field . ' is missing!' );
+            }
+        }
+
+        // if no ip address was specified, assume it's the remote host
+        if ( !isset( $info['ipAddress'] ) ) {
+            $info['ipAddress'] = $this->getIp();
+        }
+
+        $this->billTo = $info;
+
+        return $this;
+
+    }
+
+    public function createPurchaseTotals($currency = null, $amount = null){
+        // build the currency obj
+
+        $purchaseTotals = new CybersourceSOAPModel();
+
+        if(!is_null($currency)){
+            $purchaseTotals->currency = $currency;
+        }
+
+        if(!is_null($amount)){
+            $purchaseTotals->grandTotalAmount = $amount;
+        }
+
+        return $purchaseTotals;
+
+    }
+
+    protected function createItems( ) {
+
+        // there is no container for items, which annoys me
+        $items = array();
+
+        $i = 0;
+        foreach ( $this->items as $item ) {
+            $itemObj = new CybersourceSOAPModel();
+            $itemObj->unitPrice = $item['unitPrice'];
+            $itemObj->quantity = $item['quantity'];
+            $itemObj->id = $i;
+
+            $items[] = $itemObj;
+
+            $i++;
+        }
+
+        return $items;
+
+    }
+
+    private function createBillTo( ) {
+
+        // build the billTo class
+        $billTo = new CybersourceSOAPModel();
+
+        // add all the bill_to fields
+        foreach ( $this->billTo as $k => $v ) {
+            $billTo->$k = $v;
+        }
+
+        return $billTo;
+
+    }
+
+    private function createCard( ) {
+
+        // build the credit card class
+        $card = new CybersourceSOAPModel();
+
+        foreach ( $this->card as $k => $v ) {
+            $card->$k = $v;
+        }
+
+        return $card;
+
+    }
+
+    /**
+     * Get the remote IP address, but try and take into account common proxy headers and the like.
+     *
+     * @return string The client's IP address or 0.0.0.0 if we couldn't find it.
+     */
+    private function getIp( ) {
+
+        $headers = array(
+            'HTTP_CLIENT_IP',
+            'HTTP_FORWARDED',
+            'HTTP_X_FORWARDED',
+            'HTTP_X_FORWARDED_FOR',
+            'REMOTE_ADDR',
+        );
+
+        foreach ( $headers as $header ) {
+            if ( isset( $_SERVER[ $header ] ) ) {
+                return $_SERVER[ $header ];
+            }
+        }
+
+        // just in case none of them are set
+        return '0.0.0.0';
+
+    }
+
+
+    /**
+     * Try to determine the type of card based on its number.
+     *
+     * @see http://www.cybersource.com/support_center/management/best_practices/view.php?page_id=416
+     * @param int $card_number The credit card number
+     * @return string|null The name of the card type or null if it wasn't matched.
+     */
+    public function getCardType( $card_number ) {
+
+        $digits = str_split( $card_number );
+
+        if ( strlen( $card_number ) == 15 && $digits[0] == 3 && ( $digits[1] == 4 || $digits[1] == 7 ) ) {
+            return 'American Express';
+        }
+        else if ( strlen( $card_number ) == 14 && $digits[0] == 3 && in_array( $digits[1], array( 0, 6, 8 ) ) ) {
+            return 'Diners Club';		// also Carte Blanche - how the hell am i supposed to know?
+        }
+        else if ( strlen( $card_number ) == 16 && (
+                ( substr( $card_number, 0, 8 ) >= 60110000 && substr( $card_number, 0, 8 ) <= 60119999 ) ||
+                ( substr( $card_number, 0, 8 ) >= 65000000 && substr( $card_number, 0, 8 ) <= 65999999 ) ||
+                ( substr( $card_number, 0, 8 ) >= 62212600 && substr( $card_number, 0, 8 ) <= 62292599 )
+            ) ) {
+            return 'Discover';
+        }
+        else if ( strlen( $card_number ) == 15 && in_array( substr( $card_number, 0, 4 ), array( 2014, 2149 ) ) ) {
+            return 'enRoute';
+        }
+        else if ( strlen( $card_number ) == 16 && (
+                in_array( substr( $card_number, 0, 4 ), array( 3088, 3096, 3112, 3158, 3337 ) ) ||
+                ( substr( $card_number, 0, 8 ) >= 35280000 && substr( $card_number, 0, 8 ) <= 35899999 )
+            ) ) {
+            return 'JCB';
+        }
+        else if ( strlen( $card_number ) == 16 && $digits[0] == 5 && $digits[1] >= 1 && $digits[1] <= 5 ) {
+            return 'MasterCard';
+        }
+        else if ( ( strlen( $card_number ) == 13 || strlen( $card_number ) == 16 ) && $digits[0] == 4 ) {
+            return 'Visa';
+        }
+
+        // otherwise, we don't know
+        return null;
+
+    }
+
+
 
 } 

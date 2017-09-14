@@ -18,7 +18,7 @@ class LaravelCybersourceServiceProvider extends ServiceProvider {
 	 */
 	public function register()
 	{
-        $this->app->bind('Credibility\LaravelCybersource\Cybersource', function() {
+        $this->app->bind('cybersource', function() {
             $configs = (new ConfigsFactory())->getFromConfigFile();
             $client = new SOAPClient($configs, []);
             $factory = new SOAPClientFactory();
