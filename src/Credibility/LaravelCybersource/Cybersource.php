@@ -158,7 +158,7 @@ class Cybersource {
      * @param $currency
      * @return \Credibility\LaravelCybersource\models\CybersourceResponse
      */
-    public function updateCardSubscription($subscriptionId, $updateCard, $currency = null)
+    public function updateCardSubscription($subscriptionId, $updateCard = null, $currency = null)
     {
         $request = $this->createUpdateCardSubscriptionRequest($subscriptionId, $updateCard, $currency);
         return $this->sendRequest($request);
